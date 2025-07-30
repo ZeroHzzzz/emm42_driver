@@ -1,4 +1,10 @@
-import serial
+try:
+    from maix import uart, time
+    MAIX_MODE = True
+except ImportError:
+    import serial
+    import time as pytime
+    MAIX_MODE = False
 
 class Emm42Driver:
     # 修改参数命令
@@ -175,13 +181,22 @@ class Emm42Driver:
         cmd = [self.addr, 0x0F, 0x5F]
         cmd.append(self.checksum(cmd))
         return self.send_cmd(bytes(cmd))
+
     def __init__(self, port, baudrate=115200, addr=1):
-        self.ser = serial.Serial(port, baudrate, timeout=0.5)
         self.addr = addr
+        if MAIX_MODE:
+            self.ser = uart.UART(port, baudrate)
+        else:
+            self.ser = serial.Serial(port, baudrate, timeout=0.5)
 
     def send_cmd(self, cmd_bytes):
         self.ser.write(cmd_bytes)
-        return self.ser.read(32)  # 读取返回数据
+        if MAIX_MODE:
+            time.sleep_ms(2)
+            return self.ser.read()
+        else:
+            pytime.sleep(0.01)
+            return self.ser.read(32)
 
     def checksum(self, data):
         # 默认校验方式：最后一个字节为0x6B
@@ -304,21 +319,16 @@ class Emm42Driver:
         return self.send_cmd(bytes(cmd))
 
     def close(self):
-        self.ser.close()
+        if not MAIX_MODE:
+            self.ser.close()
 
 if __name__ == "__main__":
-    driver = Emm42Driver(port="COM3", baudrate=115200, addr=1)
-    print("使能电机:", driver.enable_motor(True))
-    print("设置速度:", driver.set_speed(direction=0, speed=1500, acc=10))
-    print("位置控制:", driver.set_position(direction=0, speed=1500, acc=0, pulses=3200, abs_mode=False))
-    print("立即停止:", driver.stop())
-    print("清零位置:", driver.clear_position())
-    print("校准编码器:", driver.calibrate_encoder())
-    print("解除堵转保护:", driver.release_clog())
-    print("恢复出厂设置:", driver.restore_factory())
-    print("读取版本:", driver.read_version())
-    print("读取电压:", driver.read_voltage())
-    print("读取电流:", driver.read_current())
-    print("读取编码器:", driver.read_encoder())
-    print("读取状态:", driver.read_status())
+    # 自动选择串口设备
+    if MAIX_MODE:
+        device = "/dev/ttyS0"
+    else:
+        device = "COM3"
+    driver = Emm42Driver(port=device, baudrate=115200, addr=1)
+    driver.enable_motor(enable=True)
+    driver.set_speed(direction=1, speed=1500, acc=10, sync=False)
     driver.close()
